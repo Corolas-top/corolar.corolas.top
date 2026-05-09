@@ -1,10 +1,11 @@
 import { z } from "zod";
 import { createRouter, anyAuthQuery } from "../middleware";
-import { supabase } from "../lib/supabase";
+import { db } from "../lib/supabase";
 
 export const notesRouter = createRouter({
   list: anyAuthQuery.query(async () => {
-    const { data, error } = await supabase
+    const s = await db();
+    const { data, error } = await s
       .from("encrypted_notes")
       .select("id, title, updated_at, created_at")
       .order("updated_at", { ascending: false });
@@ -15,11 +16,8 @@ export const notesRouter = createRouter({
   getById: anyAuthQuery
     .input(z.object({ id: z.number() }))
     .query(async ({ input }) => {
-      const { data, error } = await supabase
-        .from("encrypted_notes")
-        .select("*")
-        .eq("id", input.id)
-        .single();
+      const s = await db();
+      const { data, error } = await s.from("encrypted_notes").select("*").eq("id", input.id).single();
       if (error) return null;
       return data;
     }),
@@ -34,11 +32,8 @@ export const notesRouter = createRouter({
       }),
     )
     .mutation(async ({ input }) => {
-      const { data, error } = await supabase
-        .from("encrypted_notes")
-        .insert(input)
-        .select()
-        .single();
+      const s = await db();
+      const { data, error } = await s.from("encrypted_notes").insert(input).select().single();
       if (error) throw new Error(error.message);
       return data;
     }),
@@ -55,7 +50,8 @@ export const notesRouter = createRouter({
     )
     .mutation(async ({ input }) => {
       const { id, ...updates } = input;
-      const { data, error } = await supabase
+      const s = await db();
+      const { data, error } = await s
         .from("encrypted_notes")
         .update({ ...updates, updated_at: new Date().toISOString() })
         .eq("id", id)
@@ -68,7 +64,8 @@ export const notesRouter = createRouter({
   delete: anyAuthQuery
     .input(z.object({ id: z.number() }))
     .mutation(async ({ input }) => {
-      const { error } = await supabase.from("encrypted_notes").delete().eq("id", input.id);
+      const s = await db();
+      const { error } = await s.from("encrypted_notes").delete().eq("id", input.id);
       if (error) throw new Error(error.message);
       return { success: true };
     }),

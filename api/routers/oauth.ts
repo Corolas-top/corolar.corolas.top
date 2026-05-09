@@ -1,10 +1,11 @@
 import { z } from "zod";
 import { createRouter, anyAuthQuery } from "../middleware";
-import { supabase } from "../lib/supabase";
+import { db } from "../lib/supabase";
 
 export const oauthRouter = createRouter({
   list: anyAuthQuery.query(async () => {
-    const { data, error } = await supabase.from("oauth_configs").select("*");
+    const s = await db();
+    const { data, error } = await s.from("oauth_configs").select("*");
     if (error) throw new Error(error.message);
     return data || [];
   }),
@@ -12,11 +13,8 @@ export const oauthRouter = createRouter({
   getByProvider: anyAuthQuery
     .input(z.object({ provider: z.string() }))
     .query(async ({ input }) => {
-      const { data, error } = await supabase
-        .from("oauth_configs")
-        .select("*")
-        .eq("provider", input.provider)
-        .single();
+      const s = await db();
+      const { data, error } = await s.from("oauth_configs").select("*").eq("provider", input.provider).single();
       if (error) return null;
       return data;
     }),
@@ -34,7 +32,8 @@ export const oauthRouter = createRouter({
     )
     .mutation(async ({ input }) => {
       const { provider, ...updates } = input;
-      const { data, error } = await supabase
+      const s = await db();
+      const { data, error } = await s
         .from("oauth_configs")
         .update({ ...updates, updated_at: new Date().toISOString() })
         .eq("provider", provider)
@@ -47,17 +46,13 @@ export const oauthRouter = createRouter({
   testConnection: anyAuthQuery
     .input(z.object({ provider: z.string() }))
     .query(async ({ input }) => {
-      const { data, error } = await supabase
-        .from("oauth_configs")
-        .select("*")
-        .eq("provider", input.provider)
-        .single();
+      const s = await db();
+      const { data, error } = await s.from("oauth_configs").select("*").eq("provider", input.provider).single();
 
       if (error || !data) {
         return { success: false, message: "Configuration not found" };
       }
 
-      // Simulated connection test
       if (!data.client_id || data.client_id.length < 10) {
         return { success: false, message: "Invalid Client ID" };
       }

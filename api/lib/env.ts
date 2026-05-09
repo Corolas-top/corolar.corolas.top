@@ -14,5 +14,7 @@ export const env = {
   isProduction: process.env.NODE_ENV === "production",
   databaseUrl: required("DATABASE_URL"),
   supabaseUrl: required("SUPABASE_URL"),
-  supabaseServiceRoleKey: required("SUPABASE_SERVICE_ROLE_KEY"),
+  supabaseAnonKey: required("SUPABASE_ANON_KEY"),
+  supabaseAdminEmail: required("SUPABASE_ADMIN_EMAIL"),
+  supabaseAdminPassword: required("SUPABASE_ADMIN_PASSWORD"),
 };

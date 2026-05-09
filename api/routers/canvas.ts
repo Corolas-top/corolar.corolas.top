@@ -1,10 +1,11 @@
 import { z } from "zod";
 import { createRouter, anyAuthQuery } from "../middleware";
-import { supabase } from "../lib/supabase";
+import { db } from "../lib/supabase";
 
 export const canvasRouter = createRouter({
   get: anyAuthQuery.query(async () => {
-    const { data, error } = await supabase
+    const s = await db();
+    const { data, error } = await s
       .from("canvas_data")
       .select("*")
       .order("id", { ascending: false })
@@ -12,7 +13,6 @@ export const canvasRouter = createRouter({
       .single();
 
     if (error) {
-      // Return empty canvas if no data
       return { id: 0, elements: [], version: 0 };
     }
     return { id: data.id, elements: data.elements || [], version: data.version };
@@ -21,15 +21,11 @@ export const canvasRouter = createRouter({
   save: anyAuthQuery
     .input(z.object({ elements: z.array(z.record(z.string(), z.any())) }))
     .mutation(async ({ input }) => {
-      // Upsert: if id 1 exists, update; else insert
-      const { data: existing } = await supabase
-        .from("canvas_data")
-        .select("id, version")
-        .eq("id", 1)
-        .single();
+      const s = await db();
+      const { data: existing } = await s.from("canvas_data").select("id, version").eq("id", 1).single();
 
       if (existing) {
-        const { data, error } = await supabase
+        const { data, error } = await s
           .from("canvas_data")
           .update({
             elements: input.elements,
@@ -42,7 +38,7 @@ export const canvasRouter = createRouter({
         if (error) throw new Error(error.message);
         return { id: data.id, version: data.version };
       } else {
-        const { data, error } = await supabase
+        const { data, error } = await s
           .from("canvas_data")
           .insert({ elements: input.elements, version: 1 })
           .select()

@@ -1,38 +1,28 @@
 import { z } from "zod";
 import { createRouter, anyAuthQuery } from "../middleware";
-import { supabase } from "../lib/supabase";
+import { db } from "../lib/supabase";
 
 export const dashboardRouter = createRouter({
   stats: anyAuthQuery.query(async () => {
-    // Project count
-    const { count: projectCount } = await supabase
-      .from("projects")
-      .select("*", { count: "exact", head: true });
+    const s = await db();
 
-    // User count
-    const { count: userCount } = await supabase
-      .from("users")
-      .select("*", { count: "exact", head: true });
+    const { count: projectCount } = await s.from("projects").select("*", { count: "exact", head: true });
+    const { count: userCount } = await s.from("users").select("*", { count: "exact", head: true });
 
-    // Recent activity
-    const { data: recentActivity } = await supabase
+    const { data: recentActivity } = await s
       .from("activity_logs")
       .select("*")
       .order("created_at", { ascending: false })
       .limit(10);
 
-    // Check system status (all projects active = normal)
-    const { data: offlineProjects } = await supabase
-      .from("projects")
-      .select("id")
-      .eq("status", "offline");
+    const { data: offlineProjects } = await s.from("projects").select("id").eq("status", "offline");
 
     const systemStatus = offlineProjects && offlineProjects.length > 0 ? "warning" : "normal";
 
     return {
       projectCount: projectCount || 0,
       userCount: userCount || 0,
-      todayVisits: 0, // Placeholder - would need analytics integration
+      todayVisits: 0,
       systemStatus,
       recentActivity: recentActivity || [],
     };
@@ -41,7 +31,6 @@ export const dashboardRouter = createRouter({
   visitTrend: anyAuthQuery
     .input(z.object({ days: z.number().default(7) }))
     .query(async ({ input }) => {
-      // Generate mock trend data (in production this would come from analytics)
       const data = [];
       for (let i = input.days - 1; i >= 0; i--) {
         const date = new Date();

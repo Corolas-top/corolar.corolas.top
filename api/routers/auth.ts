@@ -3,17 +3,14 @@ import bcrypt from "bcryptjs";
 import { SignJWT, jwtVerify } from "jose";
 import { createRouter, publicQuery } from "../middleware";
 import { env } from "../lib/env";
-import { supabase } from "../lib/supabase";
+import { db } from "../lib/supabase";
 import { TRPCError } from "@trpc/server";
 
 const secret = new TextEncoder().encode(env.appSecret);
 
 async function getSetting(key: string): Promise<string | null> {
-  const { data, error } = await supabase
-    .from("admin_settings")
-    .select("value")
-    .eq("key", key)
-    .single();
+  const s = await db();
+  const { data, error } = await s.from("admin_settings").select("value").eq("key", key).single();
   if (error || !data) return null;
   return data.value;
 }
@@ -68,7 +65,8 @@ export const authRouter = createRouter({
         .sign(secret);
 
       // Log activity
-      await supabase.from("activity_logs").insert({
+      const s = await db();
+      await s.from("activity_logs").insert({
         actor_type: input.isAgent ? "agent" : "admin",
         action: "login",
         target_type: "system",

@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { createRouter, anyAuthQuery } from "../middleware";
-import { supabase } from "../lib/supabase";
+import { db } from "../lib/supabase";
 
 export const usersRouter = createRouter({
   list: anyAuthQuery
@@ -15,7 +15,8 @@ export const usersRouter = createRouter({
     )
     .query(async ({ input }) => {
       const { page = 1, limit = 20, search, source, status } = input || {};
-      let query = supabase.from("users").select("*", { count: "exact" });
+      const s = await db();
+      let query = s.from("users").select("*", { count: "exact" });
 
       if (search) {
         query = query.or(`username.ilike.%${search}%,email.ilike.%${search}%`);
@@ -39,11 +40,8 @@ export const usersRouter = createRouter({
   getById: anyAuthQuery
     .input(z.object({ id: z.number() }))
     .query(async ({ input }) => {
-      const { data, error } = await supabase
-        .from("users")
-        .select("*")
-        .eq("id", input.id)
-        .single();
+      const s = await db();
+      const { data, error } = await s.from("users").select("*").eq("id", input.id).single();
       if (error) return null;
       return data;
     }),
@@ -51,7 +49,8 @@ export const usersRouter = createRouter({
   updateStatus: anyAuthQuery
     .input(z.object({ id: z.number(), status: z.enum(["active", "banned", "pending"]) }))
     .mutation(async ({ input }) => {
-      const { data, error } = await supabase
+      const s = await db();
+      const { data, error } = await s
         .from("users")
         .update({ status: input.status, updated_at: new Date().toISOString() })
         .eq("id", input.id)
@@ -64,18 +63,17 @@ export const usersRouter = createRouter({
   delete: anyAuthQuery
     .input(z.object({ id: z.number() }))
     .mutation(async ({ input }) => {
-      const { error } = await supabase.from("users").delete().eq("id", input.id);
+      const s = await db();
+      const { error } = await s.from("users").delete().eq("id", input.id);
       if (error) throw new Error(error.message);
       return { success: true };
     }),
 
   stats: anyAuthQuery.query(async () => {
-    const { count: total } = await supabase.from("users").select("*", { count: "exact", head: true });
-    const { count: active } = await supabase.from("users").select("*", { count: "exact", head: true }).eq("status", "active");
-    const { count: banned } = await supabase.from("users").select("*", { count: "exact", head: true }).eq("status", "banned");
-
-    const { data: byProject } = await supabase.rpc("count_users_by_project");
-
-    return { total: total || 0, active: active || 0, banned: banned || 0, byProject: byProject || {} };
+    const s = await db();
+    const { count: total } = await s.from("users").select("*", { count: "exact", head: true });
+    const { count: active } = await s.from("users").select("*", { count: "exact", head: true }).eq("status", "active");
+    const { count: banned } = await s.from("users").select("*", { count: "exact", head: true }).eq("status", "banned");
+    return { total: total || 0, active: active || 0, banned: banned || 0, byProject: {} as Record<string, number> };
   }),
 });

@@ -1,13 +1,11 @@
 import { z } from "zod";
 import { createRouter, anyAuthQuery } from "../middleware";
-import { supabase } from "../lib/supabase";
+import { db } from "../lib/supabase";
 
 export const projectsRouter = createRouter({
   list: anyAuthQuery.query(async () => {
-    const { data, error } = await supabase
-      .from("projects")
-      .select("*")
-      .order("sort_order", { ascending: true });
+    const s = await db();
+    const { data, error } = await s.from("projects").select("*").order("sort_order", { ascending: true });
     if (error) throw new Error(error.message);
     return data || [];
   }),
@@ -15,11 +13,8 @@ export const projectsRouter = createRouter({
   getById: anyAuthQuery
     .input(z.object({ id: z.number() }))
     .query(async ({ input }) => {
-      const { data, error } = await supabase
-        .from("projects")
-        .select("*")
-        .eq("id", input.id)
-        .single();
+      const s = await db();
+      const { data, error } = await s.from("projects").select("*").eq("id", input.id).single();
       if (error) return null;
       return data;
     }),
@@ -38,7 +33,8 @@ export const projectsRouter = createRouter({
       }),
     )
     .mutation(async ({ input }) => {
-      const { data, error } = await supabase.from("projects").insert(input).select().single();
+      const s = await db();
+      const { data, error } = await s.from("projects").insert(input).select().single();
       if (error) throw new Error(error.message);
       return data;
     }),
@@ -59,7 +55,8 @@ export const projectsRouter = createRouter({
     )
     .mutation(async ({ input }) => {
       const { id, ...updates } = input;
-      const { data, error } = await supabase
+      const s = await db();
+      const { data, error } = await s
         .from("projects")
         .update({ ...updates, updated_at: new Date().toISOString() })
         .eq("id", id)
@@ -72,7 +69,8 @@ export const projectsRouter = createRouter({
   delete: anyAuthQuery
     .input(z.object({ id: z.number() }))
     .mutation(async ({ input }) => {
-      const { error } = await supabase.from("projects").delete().eq("id", input.id);
+      const s = await db();
+      const { error } = await s.from("projects").delete().eq("id", input.id);
       if (error) throw new Error(error.message);
       return { success: true };
     }),

@@ -1,3 +1,4 @@
+import { useEffect } from "react";
 import { Outlet, useNavigate } from "react-router";
 import { useAuth } from "@/hooks/useAuth";
 import Sidebar from "./Sidebar";
@@ -5,6 +6,12 @@ import Sidebar from "./Sidebar";
 export default function Layout() {
   const { isAuthenticated, isLoading } = useAuth();
   const navigate = useNavigate();
+
+  useEffect(() => {
+    if (!isLoading && !isAuthenticated) {
+      navigate("/login");
+    }
+  }, [isLoading, isAuthenticated, navigate]);
 
   if (isLoading) {
     return (
@@ -15,7 +22,6 @@ export default function Layout() {
   }
 
   if (!isAuthenticated) {
-    navigate("/login");
     return null;
   }
 

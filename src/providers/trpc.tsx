@@ -7,35 +7,22 @@ import type { ReactNode } from "react";
 
 export const trpc = createTRPCReact<AppRouter>();
 
-const queryClient = new QueryClient();
-const trpcClient = trpc.createClient({
-  links: [
-    httpBatchLink({
-      url: "/api/trpc",
-      transformer: superjson,
-      headers() {
-        const adminToken = localStorage.getItem("admin_token");
-        const agentToken = localStorage.getItem("agent_token");
-        if (adminToken) return { "x-admin-token": adminToken };
-        if (agentToken) return { "x-agent-token": agentToken };
-        return {};
-      },
-      fetch(input, init) {
-        return globalThis.fetch(input, {
-          ...(init ?? {}),
-          credentials: "include",
-        });
-      },
-    }),
-  ],
+const qc = new QueryClient();
+const client = trpc.createClient({
+  links: [httpBatchLink({
+    url: "/api/trpc",
+    transformer: superjson,
+    headers() {
+      const t = localStorage.getItem("corolar_token");
+      return t ? { "x-auth-token": t } : {};
+    },
+  })],
 });
 
 export function TRPCProvider({ children }: { children: ReactNode }) {
   return (
-    <trpc.Provider client={trpcClient} queryClient={queryClient}>
-      <QueryClientProvider client={queryClient}>
-        {children}
-      </QueryClientProvider>
+    <trpc.Provider client={client} queryClient={qc}>
+      <QueryClientProvider client={qc}>{children}</QueryClientProvider>
     </trpc.Provider>
   );
 }

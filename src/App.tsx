@@ -1,13 +1,13 @@
 import { Routes, Route, Navigate } from "react-router";
-import Layout from "@/components/Layout";
 import Login from "@/pages/Login";
 import Dashboard from "@/pages/Dashboard";
 import Projects from "@/pages/Projects";
 import Users from "@/pages/Users";
-import OAuth from "@/pages/OAuth";
-import Agent from "@/pages/Agent";
-import Canvas from "@/pages/Canvas";
-import Notes from "@/pages/Notes";
+import OAuthPage from "@/pages/OAuth";
+import AgentPage from "@/pages/Agent";
+import CanvasPage from "@/pages/Canvas";
+import NotesPage from "@/pages/Notes";
+import Layout from "@/components/Layout";
 
 export default function App() {
   return (
@@ -17,10 +17,10 @@ export default function App() {
         <Route path="/" element={<Dashboard />} />
         <Route path="/projects" element={<Projects />} />
         <Route path="/users" element={<Users />} />
-        <Route path="/oauth" element={<OAuth />} />
-        <Route path="/agent" element={<Agent />} />
-        <Route path="/canvas" element={<Canvas />} />
-        <Route path="/notes" element={<Notes />} />
+        <Route path="/oauth" element={<OAuthPage />} />
+        <Route path="/agent" element={<AgentPage />} />
+        <Route path="/canvas" element={<CanvasPage />} />
+        <Route path="/notes" element={<NotesPage />} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>

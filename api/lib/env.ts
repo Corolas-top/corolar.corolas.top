@@ -1,20 +1,19 @@
 import "dotenv/config";
 
-function required(name: string): string {
-  const value = process.env[name];
-  if (!value && process.env.NODE_ENV === "production") {
-    throw new Error(`Missing required environment variable: ${name}`);
+function get(name: string): string {
+  const v = process.env[name];
+  if (process.env.NODE_ENV === "production" && !v) {
+    throw new Error(`Missing env: ${name}`);
   }
-  return value ?? "";
+  return v ?? "";
 }
 
 export const env = {
-  appId: required("APP_ID"),
-  appSecret: required("APP_SECRET"),
-  isProduction: process.env.NODE_ENV === "production",
-  databaseUrl: required("DATABASE_URL"),
-  supabaseUrl: required("SUPABASE_URL"),
-  supabaseAnonKey: required("SUPABASE_ANON_KEY"),
-  supabaseAdminEmail: required("SUPABASE_ADMIN_EMAIL"),
-  supabaseAdminPassword: required("SUPABASE_ADMIN_PASSWORD"),
+  appSecret: get("APP_SECRET") || "corolar-default-secret",
+  supabaseUrl: get("SUPABASE_URL"),
+  supabasePublishableKey: get("SUPABASE_PUBLISHABLE_KEY"),
+  supabaseAdminEmail: get("SUPABASE_ADMIN_EMAIL"),
+  supabaseAdminPassword: get("SUPABASE_ADMIN_PASSWORD"),
+  adminMasterKey: get("ADMIN_MASTER_KEY") || "corolar_1qazxsw23edcvfr45tgbnhy67ujmki89olp0",
+  isDev: process.env.NODE_ENV !== "production",
 };

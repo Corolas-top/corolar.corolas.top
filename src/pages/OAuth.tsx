@@ -4,259 +4,92 @@ import { trpc } from "@/providers/trpc";
 import Topbar from "@/components/Topbar";
 
 const providers = [
-  { id: "kimi", name: "Kimi OAuth", icon: "K" },
-  { id: "github", name: "GitHub OAuth", icon: "G" },
-  { id: "google", name: "Google OAuth", icon: "g" },
+  { id: "kimi", name: "Kimi OAuth" },
+  { id: "github", name: "GitHub OAuth" },
+  { id: "google", name: "Google OAuth" },
 ];
 
-export default function OAuth() {
+export default function OAuthPage() {
   const utils = trpc.useUtils();
-  const { data: configs, isLoading } = trpc.oauth.list.useQuery();
+  const { data: configs } = trpc.oauth.list.useQuery();
   const [testing, setTesting] = useState<string | null>(null);
   const [testResult, setTestResult] = useState<Record<string, { success: boolean; message: string }>>({});
   const [copied, setCopied] = useState<string | null>(null);
-  const [,] = useState<Record<string, Record<string, string>>>({});
 
-  const updateMutation = trpc.oauth.update.useMutation({
-    onSuccess: () => {
-      utils.oauth.list.invalidate();
-    },
-  });
+  const updateMut = trpc.oauth.update.useMutation({ onSuccess: () => utils.oauth.list.invalidate() });
 
-  const handleToggle = (provider: string, enabled: boolean) => {
-    updateMutation.mutate({ provider, enabled });
-  };
-
-  const handleTest = async (provider: string) => {
-    setTesting(provider);
-    try {
-      const result = await utils.oauth.testConnection.fetch({ provider });
-      setTestResult((prev) => ({ ...prev, [provider]: result }));
-    } catch {
-      setTestResult((prev) => ({ ...prev, [provider]: { success: false, message: "测试失败" } }));
-    }
-    setTesting(null);
-  };
-
-  const copyToClipboard = (text: string, key: string) => {
-    navigator.clipboard.writeText(text);
-    setCopied(key);
-    setTimeout(() => setCopied(null), 2000);
-  };
-
-  const getConfig = (provider: string) => {
-    return configs?.find((c) => c.provider === provider);
-  };
-
-  const maskSecret = (val: string) => {
-    if (!val) return "";
-    return val.length > 8 ? "••••" + val.slice(-4) : "••••••";
-  };
+  const copy = (text: string, key: string) => { navigator.clipboard.writeText(text); setCopied(key); setTimeout(() => setCopied(null), 2000); };
+  const mask = (v: string) => v ? (v.length > 8 ? "\u2022\u2022\u2022\u2022" + v.slice(-4) : "\u2022\u2022\u2022\u2022\u2022\u2022") : "";
+  const getConfig = (p: string) => configs?.find(c => c.provider === p);
 
   return (
     <div className="flex flex-col h-full overflow-y-auto">
       <Topbar title="OAuth 配置" />
-
       <div className="flex-1 p-6 max-w-[900px] mx-auto w-full">
         <div className="mb-6">
-          <h1 className="text-2xl font-semibold mb-2" style={{ color: "var(--text-primary)" }}>
-            OAuth 配置
-          </h1>
-          <p className="text-sm" style={{ color: "var(--text-secondary)" }}>
-            管理 Corolas 主站及子项目的第三方登录配置。
-          </p>
+          <h1 className="text-2xl font-semibold text-coro-text-primary mb-2">OAuth 配置</h1>
+          <p className="text-sm text-coro-text-secondary">管理 Corolas 主站及子项目的第三方登录配置。</p>
         </div>
-
-        {isLoading ? (
-          <div className="space-y-4">
-            {Array.from({ length: 3 }).map((_, i) => (
-              <div key={i} className="rounded-xl h-[200px] animate-pulse" style={{ background: "var(--bg-card)" }} />
-            ))}
-          </div>
-        ) : (
-          <div className="space-y-4">
-            {providers.map((provider) => {
-              const config = getConfig(provider.id);
-              const isEnabled = config?.enabled || false;
-              const result = testResult[provider.id];
-
-              return (
-                <div
-                  key={provider.id}
-                  className="rounded-xl p-5 transition-all duration-200"
-                  style={{
-                    background: "var(--bg-card)",
-                    border: "1px solid var(--border-subtle)",
-                  }}
-                >
-                  {/* Header */}
-                  <div className="flex items-center justify-between mb-4">
-                    <div className="flex items-center gap-3">
-                      <div
-                        className="w-10 h-10 rounded-lg flex items-center justify-center text-lg font-bold"
-                        style={{ background: "var(--bg-elevated)", color: "var(--text-gold)" }}
-                      >
-                        {provider.icon}
-                      </div>
-                      <div>
-                        <h3 className="text-base font-semibold" style={{ color: "var(--text-primary)" }}>
-                          {provider.name}
-                        </h3>
-                        <p className="text-xs" style={{ color: "var(--text-muted)" }}>
-                          {config ? "已配置" : "未配置"}
-                        </p>
-                      </div>
+        <div className="space-y-4">
+          {providers.map(p => {
+            const c = getConfig(p.id);
+            const enabled = c?.enabled || false;
+            return (
+              <div key={p.id} className="rounded-xl p-5 bg-coro-card border border-coro-border">
+                <div className="flex items-center justify-between mb-4">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-lg flex items-center justify-center text-lg font-bold bg-coro-elevated text-coro-gold">{p.id.charAt(0).toUpperCase()}</div>
+                    <div>
+                      <h3 className="text-base font-semibold text-coro-text-primary">{p.name}</h3>
+                      <p className="text-xs text-coro-text-muted">{c ? "已配置" : "未配置"}</p>
                     </div>
-                    <button
-                      onClick={() => handleToggle(provider.id, !isEnabled)}
-                      className="switch-track transition-colors duration-200"
-                      style={{ background: isEnabled ? "var(--text-gold)" : "#374151" }}
-                    >
-                      <div
-                        className="switch-thumb"
-                        style={{
-                          background: isEnabled ? "#f5f5f0" : "#9CA3AF",
-                          transform: isEnabled ? "translateX(24px)" : "translateX(0)",
-                        }}
-                      />
-                    </button>
                   </div>
-
-                  {/* Config Fields */}
-                  {isEnabled && config && (
-                    <div className="space-y-3 animate-fade-in-up">
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                        {/* Client ID */}
-                        <div>
-                          <label className="block text-xs font-medium mb-1" style={{ color: "var(--text-secondary)" }}>
-                            Client ID
-                          </label>
-                          <div className="flex items-center gap-2">
-                            <input
-                              readOnly
-                              value={maskSecret(config.client_id)}
-                              className="flex-1 h-9 px-3 rounded-md text-sm"
-                              style={{
-                                background: "var(--bg-elevated)",
-                                border: "1px solid var(--border-subtle)",
-                                color: "var(--text-muted)",
-                                fontFamily: "monospace",
-                              }}
-                            />
-                            <button
-                              onClick={() => copyToClipboard(config.client_id, `${provider.id}-id`)}
-                              className="p-2 rounded-md transition-colors duration-150"
-                              style={{ color: "var(--text-secondary)" }}
-                            >
-                              {copied === `${provider.id}-id` ? <Check size={14} /> : <Copy size={14} />}
-                            </button>
-                          </div>
-                        </div>
-
-                        {/* Client Secret */}
-                        <div>
-                          <label className="block text-xs font-medium mb-1" style={{ color: "var(--text-secondary)" }}>
-                            Client Secret
-                          </label>
-                          <div className="flex items-center gap-2">
-                            <input
-                              readOnly
-                              value={maskSecret(config.client_secret)}
-                              className="flex-1 h-9 px-3 rounded-md text-sm"
-                              style={{
-                                background: "var(--bg-elevated)",
-                                border: "1px solid var(--border-subtle)",
-                                color: "var(--text-muted)",
-                                fontFamily: "monospace",
-                              }}
-                            />
-                            <button
-                              onClick={() => copyToClipboard(config.client_secret, `${provider.id}-secret`)}
-                              className="p-2 rounded-md transition-colors duration-150"
-                              style={{ color: "var(--text-secondary)" }}
-                            >
-                              {copied === `${provider.id}-secret` ? <Check size={14} /> : <Copy size={14} />}
-                            </button>
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* Callback URL */}
-                      <div>
-                        <label className="block text-xs font-medium mb-1" style={{ color: "var(--text-secondary)" }}>
-                          Callback URL
-                        </label>
-                        <div className="flex items-center gap-2">
-                          <input
-                            readOnly
-                            value={config.callback_url}
-                            className="flex-1 h-9 px-3 rounded-md text-sm"
-                            style={{
-                              background: "var(--bg-elevated)",
-                              border: "1px solid var(--border-subtle)",
-                              color: "var(--text-secondary)",
-                              fontFamily: "monospace",
-                            }}
-                          />
-                          <button
-                            onClick={() => copyToClipboard(config.callback_url, `${provider.id}-url`)}
-                            className="p-2 rounded-md transition-colors duration-150"
-                            style={{ color: "var(--text-secondary)" }}
-                          >
-                            {copied === `${provider.id}-url` ? <Check size={14} /> : <Copy size={14} />}
-                          </button>
-                        </div>
-                      </div>
-
-                      {/* Test Connection */}
-                      <div className="flex items-center gap-3 pt-2">
-                        <button
-                          onClick={() => handleTest(provider.id)}
-                          disabled={testing === provider.id}
-                          className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm border transition-all duration-150 disabled:opacity-50"
-                          style={{
-                            borderColor: "var(--border-medium)",
-                            color: "var(--text-secondary)",
-                          }}
-                          onMouseEnter={(e) => {
-                            e.currentTarget.style.borderColor = "var(--border-gold)";
-                            e.currentTarget.style.color = "var(--text-gold)";
-                          }}
-                          onMouseLeave={(e) => {
-                            e.currentTarget.style.borderColor = "var(--border-medium)";
-                            e.currentTarget.style.color = "var(--text-secondary)";
-                          }}
-                        >
-                          <RefreshCw size={14} className={testing === provider.id ? "animate-spin" : ""} />
-                          {testing === provider.id ? "测试中..." : "测试连接"}
-                        </button>
-
-                        {result && (
-                          <div
-                            className="flex items-center gap-1.5 text-sm animate-fade-in-up"
-                            style={{ color: result.success ? "var(--success)" : "var(--error)" }}
-                          >
-                            {result.success ? <Check size={16} /> : <AlertCircle size={16} />}
-                            <span>{result.message}</span>
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  )}
-
-                  {!config && (
-                    <div
-                      className="py-4 px-3 rounded-lg text-center text-sm"
-                      style={{ background: "var(--bg-elevated)", color: "var(--text-muted)" }}
-                    >
-                      尚未配置此 OAuth 提供商。请先启用以查看配置选项。
-                    </div>
-                  )}
+                  <button onClick={() => updateMut.mutate({ provider: p.id, enabled: !enabled })}
+                    className="switch-track" style={{ background: enabled ? "#c9a96e" : "#374151" }}>
+                    <div className="switch-thumb" style={{ background: enabled ? "#f5f5f0" : "#9CA3AF", transform: enabled ? "translateX(24px)" : "translateX(0)" }} />
+                  </button>
                 </div>
-              );
-            })}
-          </div>
-        )}
+                {enabled && c && (
+                  <div className="space-y-3 animate-fade-in-up">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                      {["client_id", "client_secret"].map(field => (
+                        <div key={field}>
+                          <label className="block text-xs font-medium mb-1 text-coro-text-secondary">{field === "client_id" ? "Client ID" : "Client Secret"}</label>
+                          <div className="flex items-center gap-2">
+                            <input readOnly value={mask(c[field as keyof typeof c] as string)} className="flex-1 h-9 px-3 rounded-md text-sm bg-coro-elevated border border-coro-border text-coro-text-muted font-mono" />
+                            <button onClick={() => copy(c[field as keyof typeof c] as string, `${p.id}-${field}`)} className="p-2 rounded-md text-coro-text-secondary transition-colors">
+                              {copied === `${p.id}-${field}` ? <Check size={14} /> : <Copy size={14} />}
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium mb-1 text-coro-text-secondary">Callback URL</label>
+                      <div className="flex items-center gap-2">
+                        <input readOnly value={c.callback_url} className="flex-1 h-9 px-3 rounded-md text-sm bg-coro-elevated border border-coro-border text-coro-text-secondary font-mono" />
+                        <button onClick={() => copy(c.callback_url, `${p.id}-url`)} className="p-2 rounded-md text-coro-text-secondary transition-colors">
+                          {copied === `${p.id}-url` ? <Check size={14} /> : <Copy size={14} />}
+                        </button>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-3 pt-2">
+                      <button onClick={async () => { setTesting(p.id); try { const r = await utils.oauth.testConnection.fetch({ provider: p.id }); setTestResult(prev => ({ ...prev, [p.id]: r })); } catch { setTestResult(prev => ({ ...prev, [p.id]: { success: false, message: "Failed" } })); } setTesting(null); }}
+                        disabled={testing === p.id} className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm border border-coro-border-medium text-coro-text-secondary hover:border-coro-gold-30 hover:text-coro-gold transition-all disabled:opacity-50">
+                        <RefreshCw size={14} className={testing === p.id ? "animate-spin" : ""} /> {testing === p.id ? "测试中..." : "测试连接"}
+                      </button>
+                      {testResult[p.id] && (
+                        <div className="flex items-center gap-1.5 text-sm animate-fade-in-up" style={{ color: testResult[p.id].success ? "#4ade80" : "#f87171" }}>
+                          {testResult[p.id].success ? <Check size={16} /> : <AlertCircle size={16} />}<span>{testResult[p.id].message}</span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
       </div>
     </div>
   );

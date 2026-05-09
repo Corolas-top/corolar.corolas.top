@@ -1,72 +1,23 @@
 import { router, publicProc, authedProc } from "./middleware";
 import { z } from "zod";
-import bcrypt from "bcryptjs";
-import { SignJWT, jwtVerify } from "jose";
-import { env } from "./lib/env";
 import { db } from "./lib/supabase";
-import { TRPCError } from "@trpc/server";
 
-const secret = new TextEncoder().encode(env.appSecret);
-
-async function getSetting(key: string): Promise<string | null> {
-  const s = await db();
-  const { data } = await s.from("admin_settings").select("value").eq("key", key).single();
-  return data?.value ?? null;
-}
-
-async function setSetting(key: string, value: string) {
-  const s = await db();
-  await s.from("admin_settings").upsert({ key, value, updated_at: new Date().toISOString() });
+function id(): string {
+  return "cpid_" + Array.from({ length: 12 }, () => "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789"[Math.floor(Math.random() * 62)]).join("") + Date.now().toString(36);
 }
 
 const appRouter = router({
   ping: publicProc.query(() => ({ ok: true })),
 
   auth: router({
-    login: publicProc
-      .input(z.object({ password: z.string(), masterKey: z.string().optional(), isAgent: z.boolean().optional() }))
-      .mutation(async ({ input }) => {
-        // Check master key
-        const storedMasterKey = await getSetting("admin_master_key");
-        const masterKey = storedMasterKey || env.adminMasterKey;
-        if (input.masterKey !== masterKey) {
-          throw new TRPCError({ code: "UNAUTHORIZED", message: "Invalid master key" });
-        }
-
-        const key = input.isAgent ? "agent_password_hash" : "admin_password_hash";
-        const hash = await getSetting(key);
-        if (!hash) throw new TRPCError({ code: "NOT_FOUND", message: "Account not configured" });
-
-        if (input.isAgent) {
-          const enabled = await getSetting("agent_enabled");
-          if (enabled !== "true") throw new TRPCError({ code: "FORBIDDEN", message: "Agent disabled" });
-        }
-
-        const valid = await bcrypt.compare(input.password, hash);
-        if (!valid) throw new TRPCError({ code: "UNAUTHORIZED", message: "Invalid password" });
-
-        const token = await new SignJWT({ type: input.isAgent ? "agent" : "admin" })
-          .setProtectedHeader({ alg: "HS256" }).setIssuedAt().setExpirationTime("24h").sign(secret);
-
-        const s = await db();
-        await s.from("activity_logs").insert({
-          actor_type: input.isAgent ? "agent" : "admin", action: "login", target_type: "system",
-          details: { master_key_used: true },
-        });
-
-        return { token, type: input.isAgent ? "agent" as const : "admin" as const };
-      }),
-
     me: publicProc.query(async ({ ctx }) => {
       const token = ctx.req.headers.get("x-auth-token");
       if (!token) return null;
-      try {
-        const { payload } = await jwtVerify(token, secret, { clockTolerance: 60 });
-        return { type: payload.type as "admin" | "agent" };
-      } catch { return null; }
+      const { supabase } = await import("./lib/supabase");
+      const { data, error } = await supabase.auth.getUser(token);
+      if (error || !data.user) return null;
+      return { id: data.user.id, email: data.user.email };
     }),
-
-    logout: publicProc.mutation(() => ({ success: true })),
   }),
 
   dashboard: router({
@@ -78,12 +29,6 @@ const appRouter = router({
         s.from("activity_logs").select("*").order("created_at", { ascending: false }).limit(8),
       ]);
       return { projectCount: pc ?? 0, userCount: uc ?? 0, recentActivity: recent ?? [] };
-    }),
-    visitTrend: authedProc.input(z.object({ days: z.number().default(7) })).query(({ input }) => {
-      return Array.from({ length: input.days }, (_, i) => {
-        const d = new Date(); d.setDate(d.getDate() - (input.days - 1 - i));
-        return { date: d.toISOString().split("T")[0], count: Math.floor(Math.random() * 200) + 100 };
-      });
     }),
   }),
 
@@ -103,7 +48,8 @@ const appRouter = router({
       }))
       .mutation(async ({ input }) => {
         const s = await db();
-        const { data, error } = await s.from("projects").insert(input).select().single();
+        const corolas_project_id = id();
+        const { data, error } = await s.from("projects").insert({ ...input, corolas_project_id }).select().single();
         if (error) throw new Error(error.message);
         return data;
       }),
@@ -165,42 +111,46 @@ const appRouter = router({
         if (error) throw new Error(error.message);
         return data;
       }),
-    testConnection: authedProc.input(z.object({ provider: z.string() })).query(async ({ input }) => {
-      const s = await db();
-      const { data, error } = await s.from("oauth_configs").select("*").eq("provider", input.provider).single();
-      if (error || !data) return { success: false, message: "Not found" };
-      return { success: !!data.client_id, message: data.client_id ? "OK" : "Invalid" };
-    }),
   }),
 
   agent: router({
     getStatus: authedProc.query(async () => {
-      const enabled = (await getSetting("agent_enabled")) === "true";
-      const permsStr = await getSetting("agent_permissions");
-      const permissions = permsStr ? JSON.parse(permsStr) : {};
       const s = await db();
+      const { data: settings } = await s.from("admin_settings").select("key,value");
+      const map: Record<string, string> = {};
+      (settings ?? []).forEach((r: Record<string, unknown>) => { map[String(r.key)] = String(r.value); });
       const today = new Date().toISOString().split("T")[0];
       const { count } = await s.from("agent_access_logs").select("*", { count: "exact" }).gte("created_at", today);
       const { data: lastLog } = await s.from("agent_access_logs").select("created_at").order("created_at", { ascending: false }).limit(1).single();
-      return { enabled, lastAccess: lastLog?.created_at ?? null, todayCalls: count ?? 0, permissions };
+      return {
+        enabled: map["agent_enabled"] === "true",
+        lastAccess: (lastLog as Record<string, string> | null)?.created_at ?? null,
+        todayCalls: count ?? 0,
+        permissions: map["agent_permissions"] ? JSON.parse(map["agent_permissions"]) : {},
+      };
     }),
     updatePassword: authedProc.input(z.object({ currentPassword: z.string(), newPassword: z.string().min(6) }))
       .mutation(async ({ input }) => {
-        const hash = await getSetting("agent_password_hash");
+        const { default: bcrypt } = await import("bcryptjs");
+        const s = await db();
+        const { data } = await s.from("admin_settings").select("value").eq("key", "agent_password_hash").single();
+        const hash = data?.value as string;
         if (!hash) throw new Error("Agent not configured");
         if (!await bcrypt.compare(input.currentPassword, hash)) throw new Error("Wrong password");
         const newHash = await bcrypt.hash(input.newPassword, 12);
-        await setSetting("agent_password_hash", newHash);
+        await s.from("admin_settings").upsert({ key: "agent_password_hash", value: newHash, updated_at: new Date().toISOString() });
         return { success: true };
       }),
     updatePermissions: authedProc.input(z.object({ permissions: z.record(z.string(), z.boolean()) }))
       .mutation(async ({ input }) => {
-        await setSetting("agent_permissions", JSON.stringify(input.permissions));
+        const s = await db();
+        await s.from("admin_settings").upsert({ key: "agent_permissions", value: JSON.stringify(input.permissions), updated_at: new Date().toISOString() });
         return { success: true };
       }),
     toggleEnabled: authedProc.input(z.object({ enabled: z.boolean() }))
       .mutation(async ({ input }) => {
-        await setSetting("agent_enabled", String(input.enabled));
+        const s = await db();
+        await s.from("admin_settings").upsert({ key: "agent_enabled", value: String(input.enabled), updated_at: new Date().toISOString() });
         return { success: true };
       }),
     getLogs: authedProc.input(z.object({ page: z.number().default(1), limit: z.number().default(20) }).optional())
@@ -267,25 +217,6 @@ const appRouter = router({
       const s = await db();
       const { error } = await s.from("encrypted_notes").delete().eq("id", input.id);
       if (error) throw new Error(error.message);
-      return { success: true };
-    }),
-  }),
-
-  settings: router({
-    getMasterKey: authedProc.query(async () => {
-      const key = await getSetting("admin_master_key");
-      return { key: key || env.adminMasterKey, isCustom: !!key };
-    }),
-    updateMasterKey: authedProc.input(z.object({ newKey: z.string().min(10) })).mutation(async ({ input }) => {
-      await setSetting("admin_master_key", input.newKey);
-      return { success: true };
-    }),
-    updateAdminPassword: authedProc.input(z.object({ currentPassword: z.string(), newPassword: z.string().min(6) })).mutation(async ({ input }) => {
-      const hash = await getSetting("admin_password_hash");
-      if (!hash) throw new Error("Admin not configured");
-      if (!await bcrypt.compare(input.currentPassword, hash)) throw new Error("Wrong password");
-      const newHash = await bcrypt.hash(input.newPassword, 12);
-      await setSetting("admin_password_hash", newHash);
       return { success: true };
     }),
   }),

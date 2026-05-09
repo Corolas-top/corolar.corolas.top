@@ -1,23 +1,17 @@
 import type { FetchCreateContextFnOptions } from "@trpc/server/adapters/fetch";
-import { jwtVerify } from "jose";
-import { env } from "./lib/env";
-
-const secret = new TextEncoder().encode(env.appSecret);
+import { verifyToken } from "./lib/supabase";
 
 export type Ctx = {
   req: Request;
   resHeaders: Headers;
-  auth?: { type: "admin" | "agent" };
+  auth?: { userId: string; email?: string };
 };
 
 export async function createContext(opts: FetchCreateContextFnOptions): Promise<Ctx> {
   const token = opts.req.headers.get("x-auth-token");
-  let auth: Ctx["auth"];
   if (token) {
-    try {
-      const { payload } = await jwtVerify(token, secret, { clockTolerance: 60 });
-      auth = { type: payload.type as "admin" | "agent" };
-    } catch { /* ignore */ }
+    const user = await verifyToken(token);
+    if (user) return { req: opts.req, resHeaders: opts.resHeaders, auth: { userId: user.id, email: user.email } };
   }
-  return { req: opts.req, resHeaders: opts.resHeaders, auth };
+  return { req: opts.req, resHeaders: opts.resHeaders };
 }

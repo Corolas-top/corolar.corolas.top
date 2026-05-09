@@ -32,7 +32,6 @@ export default function CanvasPage() {
   const drawStart = useRef({ x: 0, y: 0 });
 
   useEffect(() => { if (saved?.elements) setEls(saved.elements as El[]); }, [saved]);
-
   useEffect(() => {
     const iv = setInterval(() => { if (els.length) { saveMut.mutate({ elements: els as unknown as Record<string, unknown>[] }); setStatus("已保存"); setTimeout(() => setStatus(""), 2000); } }, 5000);
     return () => clearInterval(iv);
@@ -68,34 +67,33 @@ export default function CanvasPage() {
     if (tool === "rect" || tool === "circle") setEls(prev => [...prev, { id: Date.now().toString(), type: tool, x: Math.min(drawStart.current.x, p.x), y: Math.min(drawStart.current.y, p.y), width: Math.abs(p.x - drawStart.current.x), height: Math.abs(p.y - drawStart.current.y), color }]);
   };
 
-  const onWheel = (e: React.WheelEvent) => { e.preventDefault(); setZoom(z => Math.max(0.1, Math.min(5, z + (e.deltaY > 0 ? -0.1 : 0.1)))); };
-
   return (
-    <div className="fixed inset-0 bg-coro-bg">
-      <div className="absolute top-4 left-1/2 -translate-x-1/2 z-50 flex items-center gap-1 px-2 py-1.5 rounded-xl glass border border-coro-border">
-        {TOOLS.map(t => { const I = t.icon; const a = tool === t.id; return <button key={t.id} onClick={() => setTool(t.id)} title={t.label} className={`p-2 rounded-lg transition-all ${a ? "bg-coro-gold-10 text-coro-gold" : "text-coro-text-secondary hover:bg-white/[0.05]"}`}><I size={18} /></button>; })}
-        <div className="w-px h-5 mx-1 bg-coro-border" />
+    <div className="fixed inset-0 bg-[#050505]">
+      <div className="absolute top-4 left-1/2 -translate-x-1/2 z-50 flex items-center gap-1 px-2 py-1.5 rounded-xl glass border border-[rgba(255,255,255,0.06)]">
+        {TOOLS.map(t => { const I = t.icon; const a = tool === t.id; return <button key={t.id} onClick={() => setTool(t.id)} title={t.label} className={`p-2 rounded-lg transition-all ${a ? "bg-[rgba(201,169,110,0.2)] text-[#c9a96e]" : "text-[rgba(245,245,240,0.6)] hover:bg-[rgba(255,255,255,0.05)]"}`}><I size={18} /></button>; })}
+        <div className="w-px h-5 mx-1 bg-[rgba(255,255,255,0.06)]" />
         {tool !== "select" && tool !== "note" && COLORS.map(c => <button key={c} onClick={() => setColor(c)} className="w-5 h-5 rounded-full transition-transform" style={{ background: c, transform: color === c ? "scale(1.2)" : "scale(1)", boxShadow: color === c ? `0 0 0 2px #050505,0 0 0 3px ${c}` : "none" }} />)}
-        <div className="w-px h-5 mx-1 bg-coro-border" />
-        <button onClick={() => { const b = new Blob([JSON.stringify(els)], { type: "application/json" }); const u = URL.createObjectURL(b); const a = document.createElement("a"); a.href = u; a.download = `canvas-${Date.now()}.json`; a.click(); URL.revokeObjectURL(u); }} className="p-2 rounded-lg text-coro-text-secondary hover:bg-white/[0.05] transition-colors" title="导出"><Download size={18} /></button>
-        <button onClick={() => sel && setEls(prev => prev.filter(e => e.id !== sel))} className="p-2 rounded-lg text-coro-text-secondary hover:bg-white/[0.05] transition-colors" title="删除"><Trash2 size={18} /></button>
+        <div className="w-px h-5 mx-1 bg-[rgba(255,255,255,0.06)]" />
+        <button onClick={() => { const b = new Blob([JSON.stringify(els)], { type: "application/json" }); const u = URL.createObjectURL(b); const a = document.createElement("a"); a.href = u; a.download = `canvas-${Date.now()}.json`; a.click(); URL.revokeObjectURL(u); }} className="p-2 rounded-lg text-[rgba(245,245,240,0.6)] hover:bg-[rgba(255,255,255,0.05)] transition-colors" title="导出"><Download size={18} /></button>
+        <button onClick={() => sel && setEls(prev => prev.filter(e => e.id !== sel))} className="p-2 rounded-lg text-[rgba(245,245,240,0.6)] hover:bg-[rgba(255,255,255,0.05)] transition-colors" title="删除"><Trash2 size={18} /></button>
       </div>
 
-      <div className="absolute inset-0 overflow-hidden cursor-crosshair" onMouseDown={onDown} onMouseMove={onMove} onMouseUp={onUp} onWheel={onWheel}
+      <div className="absolute inset-0 overflow-hidden cursor-crosshair"
+        onMouseDown={onDown} onMouseMove={onMove} onMouseUp={onUp}
+        onWheel={e => { e.preventDefault(); setZoom(z => Math.max(0.1, Math.min(5, z + (e.deltaY > 0 ? -0.1 : 0.1)))); }}
         style={{ backgroundImage: "radial-gradient(circle, rgba(255,255,255,0.06) 1px, transparent 1px)", backgroundSize: `${20 * zoom}px ${20 * zoom}px`, backgroundPosition: `${offset.x}px ${offset.y}px`, cursor: panning ? "grabbing" : tool === "select" ? "default" : "crosshair" }}>
         <div style={{ transform: `translate(${offset.x}px, ${offset.y}px) scale(${zoom})`, transformOrigin: "0 0" }}>
           {els.map(el => <CanvasEl key={el.id} el={el} sel={sel === el.id} onUpd={u => setEls(prev => prev.map(e => e.id === el.id ? { ...e, ...u } : e))} onDel={() => setEls(prev => prev.filter(e => e.id !== el.id))} />)}
         </div>
       </div>
 
-      <div className="absolute bottom-4 left-4 z-50 flex items-center gap-2 px-3 py-2 rounded-xl glass border border-coro-border">
-        <button onClick={() => setZoom(z => Math.max(0.1, z - 0.1))} className="p-1.5 rounded text-coro-text-secondary hover:text-coro-text-primary"><ZoomOut size={16} /></button>
-        <span className="text-xs font-medium min-w-[50px] text-center text-coro-text-secondary">{Math.round(zoom * 100)}%</span>
-        <button onClick={() => setZoom(z => Math.min(5, z + 0.1))} className="p-1.5 rounded text-coro-text-secondary hover:text-coro-text-primary"><ZoomIn size={16} /></button>
-        <button onClick={() => { setZoom(1); setOffset({ x: 0, y: 0 }); }} className="p-1.5 rounded text-coro-text-secondary hover:text-coro-text-primary ml-1" title="适应"><Maximize size={16} /></button>
+      <div className="absolute bottom-4 left-4 z-50 flex items-center gap-2 px-3 py-2 rounded-xl glass border border-[rgba(255,255,255,0.06)]">
+        <button onClick={() => setZoom(z => Math.max(0.1, z - 0.1))} className="p-1.5 rounded text-[rgba(245,245,240,0.6)] hover:text-[#f5f5f0]"><ZoomOut size={16} /></button>
+        <span className="text-xs font-medium min-w-[50px] text-center text-[rgba(245,245,240,0.6)]">{Math.round(zoom * 100)}%</span>
+        <button onClick={() => setZoom(z => Math.min(5, z + 0.1))} className="p-1.5 rounded text-[rgba(245,245,240,0.6)] hover:text-[#f5f5f0]"><ZoomIn size={16} /></button>
+        <button onClick={() => { setZoom(1); setOffset({ x: 0, y: 0 }); }} className="p-1.5 rounded text-[rgba(245,245,240,0.6)] hover:text-[#f5f5f0] ml-1" title="适应"><Maximize size={16} /></button>
       </div>
-
-      {status && <div className="absolute bottom-4 right-4 z-50 px-3 py-1.5 rounded-lg text-xs animate-fade-in-up bg-coro-elevated text-coro-text-secondary border border-coro-border">{status}</div>}
+      {status && <div className="absolute bottom-4 right-4 z-50 px-3 py-1.5 rounded-lg text-xs animate-fade-in-up bg-[#111] text-[rgba(245,245,240,0.6)] border border-[rgba(255,255,255,0.06)]">{status}</div>}
     </div>
   );
 }
@@ -106,21 +104,19 @@ function CanvasEl({ el, sel, onUpd, onDel }: { el: El; sel: boolean; onUpd: (u: 
     const d = el.points.map((p, i) => `${i === 0 ? "M" : "L"} ${p.x} ${p.y}`).join(" ");
     return <svg className="absolute pointer-events-none" style={{ left: 0, top: 0, width: "100%", height: "100%", overflow: "visible" }}><path d={d} fill="none" stroke={el.color || "#c9a96e"} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" /></svg>;
   }
-  if (el.type === "line") {
-    return <svg className="absolute pointer-events-none" style={{ left: 0, top: 0, width: "100%", height: "100%", overflow: "visible" }}><line x1={el.fromX} y1={el.fromY} x2={el.toX} y2={el.toY} stroke={el.color || "#c9a96e"} strokeWidth={2} /></svg>;
-  }
+  if (el.type === "line") return <svg className="absolute pointer-events-none" style={{ left: 0, top: 0, width: "100%", height: "100%", overflow: "visible" }}><line x1={el.fromX} y1={el.fromY} x2={el.toX} y2={el.toY} stroke={el.color || "#c9a96e"} strokeWidth={2} /></svg>;
   if (el.type === "rect") return <div className="absolute" style={{ left: el.x, top: el.y, width: el.width, height: el.height, border: `2px solid ${el.color || "rgba(255,255,255,0.1)"}`, borderRadius: 4, background: sel ? "rgba(201,169,110,0.05)" : "transparent" }} />;
   if (el.type === "circle") return <div className="absolute rounded-full" style={{ left: el.x, top: el.y, width: el.width, height: el.height, border: `2px solid ${el.color || "rgba(255,255,255,0.1)"}`, background: sel ? "rgba(201,169,110,0.05)" : "transparent" }} />;
   if (el.type === "note") return (
     <div className="absolute" style={{ left: el.x, top: el.y, width: el.width || 100, height: el.height || 100, background: el.color || "#fbbf24", borderRadius: 4, padding: 8, boxShadow: "0 2px 8px rgba(0,0,0,0.2)", color: "#1a1a1a" }} onDoubleClick={() => setEditing(true)}>
-      {editing ? <textarea autoFocus value={el.text || ""} onChange={e => onUpd({ text: e.target.value })} onBlur={() => setEditing(false)} className="w-full h-full bg-transparent outline-none text-xs resize-none text-[#1a1a1a]" /> : <p className="text-xs break-words text-[#1a1a1a]">{el.text || ""}</p>}
-      {sel && <button onClick={onDel} className="absolute -top-2 -right-2 w-4 h-4 rounded-full flex items-center justify-center text-[10px] bg-coro-error text-white">&times;</button>}
+      {editing ? <textarea autoFocus value={el.text || ""} onChange={e => onUpd({ text: e.target.value })} onBlur={() => setEditing(false)} className="w-full h-full bg-transparent outline-none text-xs resize-none" style={{ color: "#1a1a1a" }} /> : <p className="text-xs break-words" style={{ color: "#1a1a1a" }}>{el.text || ""}</p>}
+      {sel && <button onClick={onDel} className="absolute -top-2 -right-2 w-4 h-4 rounded-full flex items-center justify-center text-[10px] bg-[#f87171] text-white">&times;</button>}
     </div>
   );
   if (el.type === "text") return (
     <div className="absolute" style={{ left: el.x, top: el.y }} onDoubleClick={() => setEditing(true)}>
-      {editing ? <input autoFocus value={el.text || ""} onChange={e => onUpd({ text: e.target.value })} onBlur={() => setEditing(false)} className="bg-transparent outline-none text-sm text-coro-text-primary" style={{ color: el.color || "#f5f5f0", minWidth: 100 }} /> : <span className="text-sm whitespace-pre" style={{ color: el.color || "#f5f5f0" }}>{el.text || ""}</span>}
-      {sel && <button onClick={onDel} className="absolute -top-2 -right-4 text-xs text-coro-error">&times;</button>}
+      {editing ? <input autoFocus value={el.text || ""} onChange={e => onUpd({ text: e.target.value })} onBlur={() => setEditing(false)} className="bg-transparent outline-none text-sm" style={{ color: el.color || "#f5f5f0", minWidth: 100 }} /> : <span className="text-sm whitespace-pre" style={{ color: el.color || "#f5f5f0" }}>{el.text || ""}</span>}
+      {sel && <button onClick={onDel} className="absolute -top-2 -right-4 text-xs text-[#f87171]">&times;</button>}
     </div>
   );
   return null;

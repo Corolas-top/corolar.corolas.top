@@ -8,8 +8,8 @@ export default function Layout() {
 
   if (isLoading) {
     return (
-      <div className="flex items-center justify-center h-screen bg-coro-bg">
-        <div className="w-8 h-8 border-2 border-coro-gold border-t-transparent rounded-full animate-spin" />
+      <div className="flex items-center justify-center h-screen bg-[#050505]">
+        <div className="w-8 h-8 border-2 border-[#c9a96e] border-t-transparent rounded-full animate-spin" />
       </div>
     );
   }
@@ -20,7 +20,7 @@ export default function Layout() {
   }
 
   return (
-    <div className="flex h-screen bg-coro-bg">
+    <div className="flex h-screen bg-[#050505]">
       <Sidebar />
       <main className="flex-1 flex flex-col overflow-hidden ml-60">
         <Outlet />

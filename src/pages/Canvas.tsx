@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { MousePointer, Pen, StickyNote, Type, Minus, Square, Circle, ZoomIn, ZoomOut, Maximize, Download, Trash2 } from "lucide-react";
-import { trpc } from "@/providers/trpc";
+import { supabase } from "@/lib/supabase";
 
 type Tool = "select" | "pen" | "note" | "text" | "line" | "rect" | "circle";
 type El = { id: string; type: Tool; x: number; y: number; width?: number; height?: number; text?: string; color?: string; points?: { x: number; y: number }[]; fromX?: number; fromY?: number; toX?: number; toY?: number };
@@ -17,8 +17,6 @@ const TOOLS: { id: Tool; icon: typeof MousePointer; label: string }[] = [
 const COLORS = ["#c9a96e", "#f5f5f0", "#4ade80", "#f87171", "#60a5fa", "#fbbf24"];
 
 export default function CanvasPage() {
-  const { data: saved } = trpc.canvas.get.useQuery();
-  const saveMut = trpc.canvas.save.useMutation();
   const [els, setEls] = useState<El[]>([]);
   const [tool, setTool] = useState<Tool>("select");
   const [color, setColor] = useState("#c9a96e");
@@ -28,14 +26,34 @@ export default function CanvasPage() {
   const [drawing, setDrawing] = useState(false);
   const [sel, setSel] = useState<string | null>(null);
   const [status, setStatus] = useState("");
+  const [isLoading, setIsLoading] = useState(true);
   const panStart = useRef({ x: 0, y: 0 });
   const drawStart = useRef({ x: 0, y: 0 });
 
-  useEffect(() => { if (saved?.elements) setEls(saved.elements as El[]); }, [saved]);
+  // Load from Supabase on mount
   useEffect(() => {
-    const iv = setInterval(() => { if (els.length) { saveMut.mutate({ elements: els as unknown as Record<string, unknown>[] }); setStatus("已保存"); setTimeout(() => setStatus(""), 2000); } }, 5000);
+    const load = async () => {
+      const { data, error } = await supabase.from("canvas_data").select("elements").order("id", { ascending: false }).limit(1).single();
+      if (!error && data?.elements) setEls(data.elements as El[]);
+      setIsLoading(false);
+    };
+    load();
+  }, []);
+
+  // Auto-save to Supabase every 5s
+  useEffect(() => {
+    if (els.length === 0) return;
+    const iv = setInterval(async () => {
+      const { data: existing } = await supabase.from("canvas_data").select("id, version").eq("id", 1).single();
+      if (existing) {
+        await supabase.from("canvas_data").update({ elements: els as any, version: (existing.version || 0) + 1, updated_at: new Date().toISOString() }).eq("id", 1);
+      } else {
+        await supabase.from("canvas_data").insert({ id: 1, elements: els as any, version: 1 });
+      }
+      setStatus("已保存"); setTimeout(() => setStatus(""), 2000);
+    }, 5000);
     return () => clearInterval(iv);
-  }, [els, saveMut]);
+  }, [els]);
 
   const s2c = useCallback((sx: number, sy: number) => ({ x: (sx - offset.x) / zoom, y: (sy - offset.y) / zoom }), [offset, zoom]);
 
@@ -69,7 +87,12 @@ export default function CanvasPage() {
 
   return (
     <div className="fixed inset-0 bg-[#050505]">
-      <div className="absolute top-4 left-1/2 -translate-x-1/2 z-50 flex items-center gap-1 px-2 py-1.5 rounded-xl glass border border-[rgba(255,255,255,0.06)]">
+      {isLoading && (
+        <div className="absolute inset-0 z-[60] flex items-center justify-center bg-[#050505]">
+          <div className="w-8 h-8 border-2 border-[#c9a96e] border-t-transparent rounded-full animate-spin" />
+        </div>
+      )}
+      <div className="absolute top-4 left-1/2 -translate-x-1/2 z-50 flex items-center gap-1 px-2 py-1.5 rounded-xl bg-[#0a0a0a]/80 backdrop-blur border border-[rgba(255,255,255,0.06)]">
         {TOOLS.map(t => { const I = t.icon; const a = tool === t.id; return <button key={t.id} onClick={() => setTool(t.id)} title={t.label} className={`p-2 rounded-lg transition-all ${a ? "bg-[rgba(201,169,110,0.2)] text-[#c9a96e]" : "text-[rgba(245,245,240,0.6)] hover:bg-[rgba(255,255,255,0.05)]"}`}><I size={18} /></button>; })}
         <div className="w-px h-5 mx-1 bg-[rgba(255,255,255,0.06)]" />
         {tool !== "select" && tool !== "note" && COLORS.map(c => <button key={c} onClick={() => setColor(c)} className="w-5 h-5 rounded-full transition-transform" style={{ background: c, transform: color === c ? "scale(1.2)" : "scale(1)", boxShadow: color === c ? `0 0 0 2px #050505,0 0 0 3px ${c}` : "none" }} />)}
@@ -87,7 +110,7 @@ export default function CanvasPage() {
         </div>
       </div>
 
-      <div className="absolute bottom-4 left-4 z-50 flex items-center gap-2 px-3 py-2 rounded-xl glass border border-[rgba(255,255,255,0.06)]">
+      <div className="absolute bottom-4 left-4 z-50 flex items-center gap-2 px-3 py-2 rounded-xl bg-[#0a0a0a]/80 backdrop-blur border border-[rgba(255,255,255,0.06)]">
         <button onClick={() => setZoom(z => Math.max(0.1, z - 0.1))} className="p-1.5 rounded text-[rgba(245,245,240,0.6)] hover:text-[#f5f5f0]"><ZoomOut size={16} /></button>
         <span className="text-xs font-medium min-w-[50px] text-center text-[rgba(245,245,240,0.6)]">{Math.round(zoom * 100)}%</span>
         <button onClick={() => setZoom(z => Math.min(5, z + 0.1))} className="p-1.5 rounded text-[rgba(245,245,240,0.6)] hover:text-[#f5f5f0]"><ZoomIn size={16} /></button>

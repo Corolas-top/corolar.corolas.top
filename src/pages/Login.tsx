@@ -41,7 +41,6 @@ function ParticleCanvas() {
   return <canvas ref={canvasRef} className="absolute inset-0 w-full h-full" />;
 }
 
-// Generate CAPTCHA: two random numbers + operation
 function genCaptcha() {
   const ops = ["+", "-", "*"] as const;
   const op = ops[Math.floor(Math.random() * ops.length)];
@@ -99,12 +98,10 @@ export default function Login() {
       return;
     }
     setLoginSession(data.session.access_token);
-    // Log activity
-    await fetch("/api/trpc/activity.log", {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "x-auth-token": data.session.access_token },
-      body: JSON.stringify({ actor_type: "admin", action: "login", target_type: "system" }),
-    }).catch(() => {});
+    // Log activity directly via Supabase
+    try {
+      await supabase.from("activity_logs").insert({ actor_type: "admin", action: "login", target_type: "system" });
+    } catch { /* ignore */ }
     window.location.href = "/";
   };
 

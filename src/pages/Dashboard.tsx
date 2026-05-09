@@ -1,5 +1,6 @@
+import { useState, useEffect } from "react";
 import { Globe, Users, Eye, Activity } from "lucide-react";
-import { trpc } from "@/providers/trpc";
+import { supabase } from "@/lib/supabase";
 import Topbar from "@/components/Topbar";
 import { useLang } from "@/hooks/useLang";
 
@@ -12,12 +13,38 @@ const statCards = [
 
 export default function Dashboard() {
   const { t } = useLang();
-  const { data: st } = trpc.dashboard.stats.useQuery();
+  const [projectCount, setProjectCount] = useState(0);
+  const [userCount, setUserCount] = useState(0);
+  const [recentActivity, setRecentActivity] = useState<any[]>([]);
+  const [projects, setProjects] = useState<any[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+
+  useEffect(() => {
+    let mounted = true;
+    const fetchData = async () => {
+      setIsLoading(true);
+      const [{ count: pc }, { count: uc }, { data: recent }, { data: plist }] = await Promise.all([
+        supabase.from("projects").select("*", { count: "exact", head: true }),
+        supabase.from("users").select("*", { count: "exact", head: true }),
+        supabase.from("activity_logs").select("*").order("created_at", { ascending: false }).limit(8),
+        supabase.from("projects").select("*").order("sort_order", { ascending: true }),
+      ]);
+      if (mounted) {
+        setProjectCount(pc ?? 0);
+        setUserCount(uc ?? 0);
+        setRecentActivity(recent ?? []);
+        setProjects(plist ?? []);
+        setIsLoading(false);
+      }
+    };
+    fetchData();
+    return () => { mounted = false; };
+  }, []);
 
   const values: Record<string, string | number> = {
-    projects: st?.projectCount ?? 0,
-    users: st?.userCount ?? 0,
-    visits: "—",
+    projects: projectCount,
+    users: userCount,
+    visits: "\u2014",
     status: t("dashboard.normal"),
   };
 
@@ -58,7 +85,7 @@ export default function Dashboard() {
           <div className="rounded-xl p-5 bg-[#0a0a0a] border border-[rgba(255,255,255,0.06)]">
             <h3 className="text-sm font-medium text-[#f5f5f0] mb-4">{t("dashboard.recentActivity")}</h3>
             <div className="space-y-3 max-h-[300px] overflow-y-auto">
-              {(st?.recentActivity ?? []).map((a, i) => (
+              {recentActivity.map((a, i) => (
                 <div key={i} className="flex items-start gap-3">
                   <div className="w-2 h-2 rounded-full mt-1.5 flex-shrink-0 bg-[#60a5fa]" />
                   <div className="flex-1 min-w-0">
@@ -70,7 +97,7 @@ export default function Dashboard() {
                   </span>
                 </div>
               ))}
-              {(!st?.recentActivity || st.recentActivity.length === 0) && (
+              {recentActivity.length === 0 && (
                 <p className="text-sm text-center py-8 text-[rgba(245,245,240,0.35)]">{t("dashboard.noData")}</p>
               )}
             </div>
@@ -81,7 +108,7 @@ export default function Dashboard() {
           <div className="px-5 py-4 border-b border-[rgba(255,255,255,0.06)]">
             <h3 className="text-sm font-medium text-[#f5f5f0]">{t("dashboard.projectStatus")}</h3>
           </div>
-          <ProjectTable />
+          <ProjectTable data={projects} isLoading={isLoading} />
         </div>
       </div>
     </div>
@@ -95,27 +122,34 @@ const statusMap: Record<string, { bg: string; text: string; label: string }> = {
   offline: { bg: "rgba(248,113,113,0.1)", text: "#f87171", label: "已下线" },
 };
 
-function ProjectTable() {
-  const { data: projects } = trpc.projects.list.useQuery();
+function ProjectTable({ data, isLoading }: { data: any[]; isLoading: boolean }) {
   return (
     <table className="w-full">
       <thead><tr className="bg-[#111]">
         {["项目名称","URL","状态","最后更新","操作"].map(h => <th key={h} className="text-left px-5 py-3 text-xs font-medium text-[rgba(245,245,240,0.6)]">{h}</th>)}
       </tr></thead>
       <tbody>
-        {(projects ?? []).map(p => {
-          const s = statusMap[p.status] || statusMap.offline;
-          return (
-            <tr key={p.id} className="border-b border-[rgba(255,255,255,0.06)] hover:bg-[rgba(255,255,255,0.03)] transition-colors">
-              <td className="px-5 py-3 text-sm font-medium text-[#f5f5f0]">{p.name}</td>
-              <td className="px-5 py-3 text-sm text-[#c9a96e] font-mono">{p.url}</td>
-              <td className="px-5 py-3"><span className="inline-flex px-2 py-0.5 rounded-full text-xs font-medium" style={{ background: s.bg, color: s.text }}>{s.label}</span></td>
-              <td className="px-5 py-3 text-xs text-[rgba(245,245,240,0.35)]">{p.updated_at ? new Date(p.updated_at).toLocaleDateString("zh-CN") : "-"}</td>
-              <td className="px-5 py-3"><a href={`https://${p.url}`} target="_blank" rel="noopener noreferrer" className="text-xs text-[rgba(245,245,240,0.35)] hover:text-[#c9a96e] transition-colors">访问 &rarr;</a></td>
-            </tr>
-          );
-        })}
-        {(!projects || projects.length === 0) && <tr><td colSpan={5} className="text-center py-12 text-sm text-[rgba(245,245,240,0.35)]">暂无数据</td></tr>}
+        {isLoading ? (
+          Array.from({ length: 3 }).map((_, i) => (
+            <tr key={i}>{Array.from({ length: 5 }).map((_, j) => <td key={j} className="px-5 py-4"><div className="h-4 rounded animate-pulse bg-[#111]" /></td>)}</tr>
+          ))
+        ) : (
+          <>
+            {data.map(p => {
+              const s = statusMap[p.status] || statusMap.offline;
+              return (
+                <tr key={p.id} className="border-b border-[rgba(255,255,255,0.06)] hover:bg-[rgba(255,255,255,0.03)] transition-colors">
+                  <td className="px-5 py-3 text-sm font-medium text-[#f5f5f0]">{p.name}</td>
+                  <td className="px-5 py-3 text-sm text-[#c9a96e] font-mono">{p.url}</td>
+                  <td className="px-5 py-3"><span className="inline-flex px-2 py-0.5 rounded-full text-xs font-medium" style={{ background: s.bg, color: s.text }}>{s.label}</span></td>
+                  <td className="px-5 py-3 text-xs text-[rgba(245,245,240,0.35)]">{p.updated_at ? new Date(p.updated_at).toLocaleDateString("zh-CN") : "-"}</td>
+                  <td className="px-5 py-3"><a href={`https://${p.url}`} target="_blank" rel="noopener noreferrer" className="text-xs text-[rgba(245,245,240,0.35)] hover:text-[#c9a96e] transition-colors">访问 &rarr;</a></td>
+                </tr>
+              );
+            })}
+            {data.length === 0 && <tr><td colSpan={5} className="text-center py-12 text-sm text-[rgba(245,245,240,0.35)]">暂无数据</td></tr>}
+          </>
+        )}
       </tbody>
     </table>
   );

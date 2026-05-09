@@ -9,14 +9,8 @@ export default defineConfig({
       "@": path.resolve(__dirname, "./src"),
     },
   },
+  envDir: "./",
   build: {
-    outDir: "dist",
-    emptyOutDir: false,
-  },
-  server: {
-    port: 3000,
-    proxy: {
-      "/api": "http://localhost:3001",
-    },
+    outDir: "dist/public",
   },
 });

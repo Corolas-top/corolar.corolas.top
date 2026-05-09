@@ -1,37 +1,61 @@
-import { useEffect, useCallback } from "react";
+import { useEffect, useCallback, useState } from "react";
 import { supabase } from "@/lib/supabase";
-import { trpc } from "@/providers/trpc";
 
 export function useAuth() {
-  const utils = trpc.useUtils();
+  const [isLoading, setIsLoading] = useState(true);
+  const [user, setUser] = useState<{ id: string; email?: string } | null>(null);
   const token = localStorage.getItem("corolar_token");
-  const { data: me, isLoading } = trpc.auth.me.useQuery(undefined, {
-    retry: false, refetchOnWindowFocus: false, enabled: !!token,
-  });
 
   useEffect(() => {
+    let mounted = true;
+    const check = async () => {
+      if (!token) { if (mounted) setIsLoading(false); return; }
+      const { data, error } = await supabase.auth.getUser(token);
+      if (mounted) {
+        if (error || !data.user) {
+          setUser(null);
+          localStorage.removeItem("corolar_token");
+          localStorage.removeItem("corolar_exp");
+        } else {
+          setUser({ id: data.user.id, email: data.user.email });
+        }
+        setIsLoading(false);
+      }
+    };
+    check();
+    return () => { mounted = false; };
+  }, [token]);
+
+  // 24h auto-logout check
+  useEffect(() => {
     if (!token) return;
-    const check = () => {
+    const checkExp = () => {
       const exp = localStorage.getItem("corolar_exp");
       if (exp && Date.now() > parseInt(exp)) {
         logout();
         window.location.reload();
       }
     };
-    check();
-    const iv = setInterval(check, 60000);
+    checkExp();
+    const iv = setInterval(checkExp, 60000);
     return () => clearInterval(iv);
   }, [token]);
 
   const logout = useCallback(() => {
     localStorage.removeItem("corolar_token");
     localStorage.removeItem("corolar_exp");
-    supabase.auth.signOut();
-    utils.invalidate();
+    supabase.auth.signOut({ scope: 'local' });
+    setUser(null);
     window.location.href = "/login";
-  }, [utils]);
+  }, []);
 
-  return { isAuthenticated: !!me, isAdmin: !!me, isLoading: isLoading && !!token, logout };
+  return {
+    isAuthenticated: !!user,
+    isAdmin: !!user,
+    isLoading: isLoading && !!token,
+    user,
+    logout,
+  };
 }
 
 export function setLoginSession(accessToken: string) {

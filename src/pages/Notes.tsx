@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { Lock, Plus, Search, Trash2, Save } from "lucide-react";
-import { trpc } from "@/providers/trpc";
+import { supabase } from "@/lib/supabase";
 import Topbar from "@/components/Topbar";
 import { useLang } from "@/hooks/useLang";
 
@@ -11,7 +11,7 @@ async function deriveKey(password: string, salt: Uint8Array): Promise<CryptoKey>
   const enc = new TextEncoder();
   const km = await crypto.subtle.importKey("raw", enc.encode(password), { name: "PBKDF2" }, false, ["deriveKey"]);
   return crypto.subtle.deriveKey(
-    { name: "PBKDF2", salt: salt as ArrayBufferView, iterations: 100000, hash: "SHA-256" },
+    { name: "PBKDF2", salt: salt.buffer as ArrayBuffer, iterations: 100000, hash: "SHA-256" },
     km, { name: "AES-GCM", length: 256 }, false, ["encrypt", "decrypt"],
   );
 }
@@ -26,7 +26,7 @@ async function encryptNote(plaintext: string, password: string): Promise<{ ciphe
   for (let offset = 0; offset < data.length; offset += CHUNK_SIZE) {
     const chunk = data.slice(offset, offset + CHUNK_SIZE);
     const iv = crypto.getRandomValues(new Uint8Array(12));
-    const encrypted = await crypto.subtle.encrypt({ name: "AES-GCM", iv: iv as ArrayBufferView }, key, chunk as ArrayBufferView);
+    const encrypted = await crypto.subtle.encrypt({ name: "AES-GCM", iv: iv.buffer as ArrayBuffer }, key, chunk.buffer as ArrayBuffer);
     ivs.push(iv); chunks.push(new Uint8Array(encrypted));
   }
   const numChunks = new Uint8Array(new Uint32Array([chunks.length]).buffer);
@@ -52,7 +52,7 @@ async function decryptNote(ciphertext: string, _iv: string, saltStr: string, pas
     const iv = ivs[i];
     const chunkEnd = i === numChunks - 1 ? data.length : pos + CHUNK_SIZE + 16;
     const chunk = data.slice(pos, chunkEnd);
-    const decrypted = await crypto.subtle.decrypt({ name: "AES-GCM", iv: iv as ArrayBufferView }, key, chunk as ArrayBufferView);
+    const decrypted = await crypto.subtle.decrypt({ name: "AES-GCM", iv: iv.buffer as ArrayBuffer }, key, chunk.buffer as ArrayBuffer);
     decryptedChunks.push(new Uint8Array(decrypted)); pos = chunkEnd;
   }
   const totalLen = decryptedChunks.reduce((s, c) => s + c.length, 0);
@@ -64,9 +64,10 @@ async function decryptNote(ciphertext: string, _iv: string, saltStr: string, pas
 
 export default function NotesPage() {
   const { t } = useLang();
-  const utils = trpc.useUtils();
-  const { data: notesList, isLoading } = trpc.notes.list.useQuery();
+  const [notesList, setNotesList] = useState<any[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
   const [selectedId, setSelectedId] = useState<number | null>(null);
+  const [selectedNote, setSelectedNote] = useState<any>(null);
   const [title, setTitle] = useState("");
   const [content, setContent] = useState("");
   const [password, setPassword] = useState("");
@@ -74,14 +75,27 @@ export default function NotesPage() {
   const [search, setSearch] = useState("");
   const [saveStatus, setSaveStatus] = useState("");
   const [dirty, setDirty] = useState(false);
+  const [saving, setSaving] = useState(false);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const { data: selectedNote } = trpc.notes.getById.useQuery({ id: selectedId! }, { enabled: !!selectedId });
-  const createMut = trpc.notes.create.useMutation({ onSuccess: (d) => { utils.notes.list.invalidate(); setSelectedId(d.id); } });
-  const updateMut = trpc.notes.update.useMutation({ onSuccess: () => { utils.notes.list.invalidate(); setDirty(false); setSaveStatus("已保存"); setTimeout(() => setSaveStatus(""), 2000); } });
-  const deleteMut = trpc.notes.delete.useMutation({ onSuccess: () => { utils.notes.list.invalidate(); setSelectedId(null); setTitle(""); setContent(""); } });
+  const fetchNotes = async () => {
+    setIsLoading(true);
+    const { data, error } = await supabase.from("encrypted_notes").select("id, title, updated_at, created_at").order("updated_at", { ascending: false });
+    if (!error) setNotesList(data ?? []);
+    setIsLoading(false);
+  };
 
-  useEffect(() => { if (selectedNote?.encrypted_content) { setShowPwPrompt(true); } else if (selectedNote) { setTitle(selectedNote.title); setContent(""); setShowPwPrompt(false); } }, [selectedNote]);
+  useEffect(() => { fetchNotes(); }, []);
+
+  const fetchNoteDetail = async (id: number) => {
+    const { data, error } = await supabase.from("encrypted_notes").select("*").eq("id", id).single();
+    if (!error) setSelectedNote(data);
+  };
+
+  useEffect(() => {
+    if (selectedNote?.encrypted_content) { setShowPwPrompt(true); }
+    else if (selectedNote) { setTitle(selectedNote.title); setContent(""); setShowPwPrompt(false); }
+  }, [selectedNote]);
 
   useEffect(() => {
     if (!dirty || !selectedId) return;
@@ -90,18 +104,55 @@ export default function NotesPage() {
     return () => { if (saveTimer.current) clearTimeout(saveTimer.current); };
   }, [title, content, dirty, selectedId]);
 
+  const handleSelectNote = (id: number) => {
+    setSelectedId(id);
+    setDirty(false);
+    fetchNoteDetail(id);
+  };
+
   const handleDecrypt = async () => {
     if (!selectedNote?.encrypted_content || !password) return;
-    try { const d = await decryptNote(selectedNote.encrypted_content, selectedNote.iv, selectedNote.salt, password); const p = JSON.parse(d); setTitle(p.title || selectedNote.title); setContent(p.content || ""); setShowPwPrompt(false); } catch { alert("解密失败，密码可能不正确"); }
+    try {
+      const d = await decryptNote(selectedNote.encrypted_content, selectedNote.iv, selectedNote.salt, password);
+      const p = JSON.parse(d);
+      setTitle(p.title || selectedNote.title);
+      setContent(p.content || "");
+      setShowPwPrompt(false);
+    } catch { alert("解密失败，密码可能不正确"); }
   };
 
   const handleSave = async () => {
     if (!password) { setShowPwPrompt(true); return; }
-    try { const d = JSON.stringify({ title, content }); const { ciphertext, iv, salt } = await encryptNote(d, password); if (selectedId) updateMut.mutate({ id: selectedId, title, encrypted_content: ciphertext, iv, salt }); else createMut.mutate({ title, encrypted_content: ciphertext, iv, salt }); } catch (e) { alert("加密失败: " + (e as Error).message); }
+    try {
+      setSaving(true);
+      const d = JSON.stringify({ title, content });
+      const { ciphertext, iv, salt } = await encryptNote(d, password);
+      if (selectedId) {
+        await supabase.from("encrypted_notes").update({ title, encrypted_content: ciphertext, iv, salt, updated_at: new Date().toISOString() }).eq("id", selectedId);
+      } else {
+        const { data } = await supabase.from("encrypted_notes").insert({ title, encrypted_content: ciphertext, iv, salt }).select().single();
+        if (data) setSelectedId(data.id);
+      }
+      setDirty(false);
+      setSaveStatus("已保存");
+      setTimeout(() => setSaveStatus(""), 2000);
+      fetchNotes();
+    } catch (e) { alert("加密失败: " + (e as Error).message); }
+    finally { setSaving(false); }
   };
 
-  const handleCreate = () => { setSelectedId(null); setTitle(""); setContent(""); setDirty(false); if (!password) setShowPwPrompt(true); };
-  const filtered = (notesList || []).filter(n => n.title.toLowerCase().includes(search.toLowerCase()));
+  const handleDelete = async () => {
+    if (!selectedId || !confirm("删除？")) return;
+    await supabase.from("encrypted_notes").delete().eq("id", selectedId);
+    setSelectedId(null);
+    setSelectedNote(null);
+    setTitle("");
+    setContent("");
+    fetchNotes();
+  };
+
+  const handleCreate = () => { setSelectedId(null); setSelectedNote(null); setTitle(""); setContent(""); setDirty(false); if (!password) setShowPwPrompt(true); };
+  const filtered = notesList.filter(n => n.title.toLowerCase().includes(search.toLowerCase()));
 
   return (
     <div className="flex flex-col h-full overflow-hidden">
@@ -123,7 +174,7 @@ export default function NotesPage() {
             {isLoading ? Array.from({ length: 5 }).map((_, i) => <div key={i} className="px-4 py-3 animate-pulse"><div className="h-4 rounded mb-2 bg-[#111] w-[70%]" /><div className="h-3 rounded bg-[#111] w-[40%]" /></div>) :
              filtered.length === 0 ? <div className="text-center py-8 text-xs text-[rgba(245,245,240,0.35)]">暂无笔记</div> :
              filtered.map(n => (
-               <button key={n.id} onClick={() => { setSelectedId(n.id); setDirty(false); }} className={`w-full text-left px-4 py-3 transition-colors relative border-b border-[rgba(255,255,255,0.06)] ${selectedId === n.id ? "bg-[rgba(255,255,255,0.03)]" : ""}`}>
+               <button key={n.id} onClick={() => handleSelectNote(n.id)} className={`w-full text-left px-4 py-3 transition-colors relative border-b border-[rgba(255,255,255,0.06)] ${selectedId === n.id ? "bg-[rgba(255,255,255,0.03)]" : ""}`}>
                  {selectedId === n.id && <div className="absolute left-0 top-1/2 -translate-y-1/2 w-[3px] h-5 bg-[#c9a96e] rounded-r" />}
                  <p className="text-sm font-medium text-[#f5f5f0] truncate">{n.title}</p>
                  <p className="text-xs text-[rgba(245,245,240,0.35)] mt-0.5">{n.updated_at ? new Date(n.updated_at).toLocaleDateString("zh-CN") : ""}</p>
@@ -142,8 +193,8 @@ export default function NotesPage() {
             <input value={title} onChange={e => { setTitle(e.target.value); setDirty(true); }} placeholder={t("notes.noTitle")} className="text-lg font-medium bg-transparent outline-none flex-1 text-[#f5f5f0]" />
             <div className="flex items-center gap-2">
               <div className="flex items-center gap-1 px-2 py-1 rounded text-xs text-[#c9a96e]" title={t("notes.encrypted")}><Lock size={12} /><span>{t("notes.encrypted")}</span></div>
-              <button onClick={handleSave} disabled={updateMut.isPending || createMut.isPending} className="p-2 rounded-lg text-[rgba(245,245,240,0.6)] hover:text-[#c9a96e] hover:bg-[rgba(255,255,255,0.05)] transition-colors disabled:opacity-50"><Save size={16} /></button>
-              {selectedId && <button onClick={() => { if (confirm("删除？")) deleteMut.mutate({ id: selectedId }); }} className="p-2 rounded-lg text-[rgba(245,245,240,0.6)] hover:text-[#f87171] hover:bg-[rgba(248,113,113,0.1)] transition-colors"><Trash2 size={16} /></button>}
+              <button onClick={handleSave} disabled={saving} className="p-2 rounded-lg text-[rgba(245,245,240,0.6)] hover:text-[#c9a96e] hover:bg-[rgba(255,255,255,0.05)] transition-colors disabled:opacity-50"><Save size={16} /></button>
+              {selectedId && <button onClick={handleDelete} className="p-2 rounded-lg text-[rgba(245,245,240,0.6)] hover:text-[#f87171] hover:bg-[rgba(248,113,113,0.1)] transition-colors"><Trash2 size={16} /></button>}
               {saveStatus && <span className="text-xs animate-fade-in-up text-[rgba(245,245,240,0.35)]">{saveStatus}</span>}
             </div>
           </div>

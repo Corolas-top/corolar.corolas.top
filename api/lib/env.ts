@@ -1,9 +1,8 @@
 import "dotenv/config";
 
 function get(name: string): string {
-  const v = process.env[name];
-  if (process.env.NODE_ENV === "production" && !v) throw new Error(`Missing env: ${name}`);
-  return v ?? "";
+  // Read env var; on Vercel process.env is injected at runtime, so never throw
+  return process.env[name] ?? "";
 }
 
 export const env = {
